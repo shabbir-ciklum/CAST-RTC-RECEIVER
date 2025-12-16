@@ -1,0 +1,346 @@
+
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>WebRTC Stream Player</title>
+        <script src="https://cdn.jsdelivr.net/npm/@twind/cdn"></script>
+        <style>
+            /* Prevent any scrolling */
+            html, body {
+                margin: 0;
+                padding: 0;
+                width: 100%;
+                height: 100%;
+                overflow: hidden;
+            }
+
+            .scroller::-webkit-scrollbar { width: 8px; }
+            .scroller::-webkit-scrollbar-track { background: #1f2937; }
+            .scroller::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+            .scroller::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+        </style>
+    </head>
+    <body class="bg-gray-900 text-white flex flex-col font-sans" style="height: 100vh; width: 100vw; overflow: hidden;">
+
+        <!-- Header -->
+        <header class="bg-gray-800 border-b border-gray-700 p-2 shadow-lg flex-shrink-0">
+            <div class="flex justify-between items-center px-2">
+                <h1 class="text-lg font-bold text-blue-400 flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    iOS WebRTC Monitor
+                </h1>
+                <div id="connectionStatus" class="flex items-center gap-2 px-2 py-1 rounded-full bg-red-900/50 text-red-200 text-xs font-medium border border-red-800 transition-colors">
+                    <div class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+                    Disconnected
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="flex-grow p-2 flex flex-col gap-2 w-full overflow-hidden">
+
+            <!-- Video Container -->
+            <div class="relative w-full flex-grow bg-black rounded-lg overflow-hidden shadow-2xl border border-gray-700 group" style="min-height: 0;">
+                <video id="remoteVideo" class="w-full h-full object-contain" autoplay playsinline></video>
+                
+                <div class="absolute inset-0 flex items-center justify-center bg-black/50 transition-opacity duration-300 pointer-events-none" id="loader">
+                    <div class="flex flex-col items-center">
+                        <svg class="animate-spin h-10 w-10 text-blue-500 mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span class="text-sm text-gray-300 font-mono" id="loaderText">Initializing...</span>
+                    </div>
+                </div>
+
+                <div class="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/90 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex justify-between items-center">
+                    <div class="text-xs text-gray-400 font-mono">
+                        Protocol: <span class="text-white">Swift Message Struct (Binary Frame)</span>
+                    </div>
+                    <button onclick="toggleMute()" id="muteBtn" class="bg-gray-700 hover:bg-gray-600 text-white px-2 py-1 rounded text-xs transition font-medium">
+                        Mute
+                    </button>
+                </div>
+            </div>
+
+            <!-- Controls & Logs Grid -->
+            <div class="w-full grid grid-cols-1 md:grid-cols-3 gap-2 flex-shrink-0">
+                <!-- Config Panel -->
+                <div class="bg-gray-800 rounded-lg p-2 border border-gray-700">
+                    <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Configuration</h3>
+                    <div class="space-y-1 text-xs">
+                        <div class="flex justify-between">
+                            <span class="text-gray-500">Signaling URL:</span>
+                            <span class="text-blue-300 font-mono text-xs" id="signalingUrlDisplay"></span>
+                        </div>
+                    </div>
+                    <button onclick="startConnection()" class="mt-2 w-full bg-blue-600 hover:bg-blue-700 text-white py-1 px-2 rounded text-sm font-medium transition shadow-lg shadow-blue-900/20">
+                        Reconnect
+                    </button>
+                </div>
+
+                <!-- Logs Panel -->
+                <div class="md:col-span-2 bg-gray-800 rounded-lg p-2 border border-gray-700 flex flex-col" style="height: 120px;">
+                    <div class="flex justify-between items-center mb-1">
+                        <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider">System Logs</h3>
+                        <button onclick="clearLogs()" class="text-xs text-gray-500 hover:text-white transition">Clear</button>
+                    </div>
+                    <div id="logs" class="flex-grow overflow-y-auto scroller font-mono text-xs space-y-1 p-1 bg-gray-900/50 rounded border border-gray-700/50"></div>
+                </div>
+            </div>
+        </main>
+
+        <script>
+            // --- Configuration ---
+            // Get signaling URL from query parameter
+            const urlParams = new URLSearchParams(window.location.search);
+            const signalingUrl = urlParams.get('signalingUrl') || '\(singlingServerURL)';
+
+            const CONFIG = {
+                signalingUrl: signalingUrl,
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' }
+                ]
+            };
+
+            // --- State ---
+            let pc = null;
+            let ws = null;
+            const videoElem = document.getElementById('remoteVideo');
+            const loader = document.getElementById('loader');
+            const loaderText = document.getElementById('loaderText');
+            const statusBadge = document.getElementById('connectionStatus');
+            const logContainer = document.getElementById('logs');
+            const muteBtn = document.getElementById('muteBtn');
+
+            // --- Logger ---
+            function log(msg, type = 'info') {
+                const el = document.createElement('div');
+                const time = new Date().toLocaleTimeString();
+                el.innerHTML = `<span class="text-gray-500">[${time}]</span> <span class="${type === 'error' ? 'text-red-400' : type === 'success' ? 'text-green-400' : 'text-blue-300'}">${msg}</span>`;
+                logContainer.appendChild(el);
+                logContainer.scrollTop = logContainer.scrollHeight;
+                console.log(`[WebRTC] ${msg}`);
+            }
+
+            function clearLogs() {
+                logContainer.innerHTML = '';
+            }
+
+            function updateStatus(status) {
+                if (status === 'connected') {
+                    statusBadge.className = "flex items-center gap-2 px-3 py-1 rounded-full bg-green-900/50 text-green-200 text-sm font-medium border border-green-800 transition-colors";
+                    statusBadge.innerHTML = `<div class="w-2 h-2 rounded-full bg-green-500"></div> Connected`;
+                    loader.classList.add('opacity-0');
+                } else if (status === 'connecting') {
+                    statusBadge.className = "flex items-center gap-2 px-3 py-1 rounded-full bg-yellow-900/50 text-yellow-200 text-sm font-medium border border-yellow-800 transition-colors";
+                    statusBadge.innerHTML = `<div class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></div> Connecting...`;
+                    loader.classList.remove('opacity-0');
+                    loaderText.innerText = "Negotiating...";
+                } else {
+                    statusBadge.className = "flex items-center gap-2 px-3 py-1 rounded-full bg-red-900/50 text-red-200 text-sm font-medium border border-red-800 transition-colors";
+                    statusBadge.innerHTML = `<div class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div> Disconnected`;
+                    loader.classList.remove('opacity-0');
+                    loaderText.innerText = "Waiting for connection...";
+                }
+            }
+
+            // --- WebRTC Logic ---
+
+            function startConnection() {
+                if (ws) ws.close();
+                if (pc) pc.close();
+
+                log(`Connecting to ${CONFIG.signalingUrl}...`);
+                updateStatus('connecting');
+
+                ws = new WebSocket(CONFIG.signalingUrl);
+                
+                // IMPORTANT: iOS sends binary frames (JSON encoded as Data).
+                // We must set binaryType to 'arraybuffer' to handle this cleanly.
+                ws.binaryType = 'arraybuffer';
+
+                ws.onopen = async () => {
+                    log('WebSocket connected.', 'success');
+                    await setupPeerConnection();
+                };
+
+                ws.onerror = (err) => {
+                    log('WebSocket Error. Check server address.', 'error');
+                    updateStatus('disconnected');
+                };
+
+                ws.onclose = () => {
+                    log('WebSocket Closed.', 'error');
+                    updateStatus('disconnected');
+                };
+
+                ws.onmessage = async (event) => {
+                    try {
+                        let messageStr;
+                        
+                        // Handle Binary Data (iOS Client)
+                        if (event.data instanceof ArrayBuffer) {
+                            messageStr = new TextDecoder('utf-8').decode(event.data);
+                        } else if (event.data instanceof Blob) {
+                             // Fallback in case binaryType didn't take
+                             messageStr = await event.data.text();
+                        } else {
+                            // Standard Text Frame
+                            messageStr = event.data;
+                        }
+
+                        const message = JSON.parse(messageStr);
+                        handleSignalingMessage(message);
+                    } catch (e) {
+                        log('Error parsing signaling message: ' + e.message, 'error');
+                        console.error("Original data:", event.data);
+                    }
+                };
+            }
+
+            async function setupPeerConnection() {
+                pc = new RTCPeerConnection({ iceServers: CONFIG.iceServers });
+
+                pc.ontrack = (event) => {
+                    log(`Track received: ${event.track.kind}`, 'success');
+                    if (videoElem.srcObject !== event.streams[0]) {
+                        videoElem.srcObject = event.streams[0];
+                        log('Stream attached to video element.', 'success');
+                        updateStatus('connected');
+                    }
+                };
+
+                // Event: ICE Candidate (Local)
+                // PROTOCOL MATCH: Wrap in Message(type: "IceCandidate", payload: IceCandidate(...))
+                pc.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        const iceCandidatePayload = {
+                            sdp: event.candidate.candidate, // iOS maps this to 'sdp' key
+                            sdpMLineIndex: event.candidate.sdpMLineIndex,
+                            sdpMid: event.candidate.sdpMid
+                        };
+
+                        const message = {
+                            type: "IceCandidate", // String(describing: IceCandidate.self)
+                            payload: iceCandidatePayload
+                        };
+                        
+                        sendSignal(message);
+                        log('Sent local ICE candidate.');
+                    }
+                };
+
+                pc.onconnectionstatechange = () => {
+                    log(`Peer Connection State: ${pc.connectionState}`);
+                    if (pc.connectionState === 'failed') updateStatus('disconnected');
+                };
+
+                pc.addTransceiver('video', { direction: 'recvonly' });
+                pc.addTransceiver('audio', { direction: 'recvonly' });
+
+                // Create Offer
+                try {
+                    const offer = await pc.createOffer();
+                    await pc.setLocalDescription(offer);
+                    
+                    log('Offer created set locally.');
+
+                    // PROTOCOL MATCH: Wrap in Message(type: "SessionDescription", payload: SessionDescription(...))
+                    const sessionPayload = {
+                        sdp: offer.sdp,
+                        type: 'offer' 
+                    };
+
+                    const message = {
+                        type: "SessionDescription", // String(describing: SessionDescription.self)
+                        payload: sessionPayload
+                    };
+
+                    sendSignal(message);
+                    log('Sent Offer to signaling server.', 'success');
+                } catch (e) {
+                    log('Error creating offer: ' + e.message, 'error');
+                }
+            }
+
+            async function handleSignalingMessage(msg) {
+                if (!pc) return;
+
+                // Swift Message enum has two cases: sdp, candidate
+                // We check the 'type' field which corresponds to the Class name in Swift.
+
+                // Case 1: SessionDescription (Offer/Answer)
+                if (msg.type === 'SessionDescription') {
+                    const payload = msg.payload;
+                    log(`Received SessionDescription (${payload.type})`, 'success');
+                    
+                    try {
+                        await pc.setRemoteDescription(new RTCSessionDescription({
+                            type: payload.type,
+                            sdp: payload.sdp
+                        }));
+                        log('Remote description set.');
+                    } catch (e) {
+                        log('Error setting remote description: ' + e.message, 'error');
+                    }
+                } 
+                // Case 2: IceCandidate
+                else if (msg.type === 'IceCandidate') {
+                    const payload = msg.payload;
+                    log('Received IceCandidate', 'info');
+                    
+                    try {
+                        const candidateInit = {
+                            candidate: payload.sdp, // Map back from Swift 'sdp' to JS 'candidate'
+                            sdpMLineIndex: payload.sdpMLineIndex,
+                            sdpMid: payload.sdpMid
+                        };
+                        await pc.addIceCandidate(new RTCIceCandidate(candidateInit));
+                        log('Added remote ICE candidate.');
+                    } catch (e) {
+                        log('Error adding ICE candidate: ' + e.message, 'error');
+                    }
+                }
+                else {
+                    log('Unknown message type received: ' + msg.type, 'error');
+                }
+            }
+
+            function sendSignal(data) {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify(data));
+                } else {
+                    log('Cannot send signal, WebSocket not open.', 'error');
+                }
+            }
+
+            function toggleMute() {
+                if (videoElem.muted) {
+                    videoElem.muted = false;
+                    muteBtn.innerText = "Mute";
+                    muteBtn.classList.replace('bg-gray-700', 'bg-blue-600');
+                } else {
+                    videoElem.muted = true;
+                    muteBtn.innerText = "Unmute";
+                    muteBtn.classList.replace('bg-blue-600', 'bg-gray-700');
+                }
+            }
+
+            window.addEventListener('load', () => {
+                // Display the signaling URL
+                document.getElementById('signalingUrlDisplay').textContent = CONFIG.signalingUrl;
+                log('App Loaded. Ready to connect.');
+                startConnection();
+            });
+
+        </script>
+    </body>
+    </html>
+
+    
