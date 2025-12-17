@@ -98,7 +98,7 @@
             // --- Configuration ---
             // Get signaling URL from query parameter
             const urlParams = new URLSearchParams(window.location.search);
-            const signalingUrl = urlParams.get('signalingUrl') || '\(singlingServerURL)';
+            const signalingUrl = urlParams.get('signalingUrl') || 'ws://localhost:8080/signaling';
 
             const CONFIG = {
                 signalingUrl: signalingUrl,
