@@ -1,91 +1,91 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>URL Cast Receiver</title>
-    <meta charset="utf-8">
-    
-    <script src="https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
-    
-    <style>
-        html, body {
-            height: 100%; 
-            width: 100%; 
-            margin: 0; 
-            padding: 0;
-            overflow: hidden; /* Hide scrollbars */
-            background-color: #000000;
-        }
-        
-        /* Style the iframe to cover the entire viewport */
-        #browser-frame {
-            width: 100vw;
-            height: 100vh;
-            border: none;
-            visibility: hidden; /* Start hidden until a URL is loaded */
-        }
+  <title>URL Cast Receiver</title>
+  <meta charset="utf-8">
 
-        /* Simple loading indicator/message */
-        #message {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: white;
-            font-family: sans-serif;
-            font-size: 24px;
-        }
-    </style>
+  <script src="https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+
+  <style>
+    html, body {
+      height: 100%;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden; /* Hide scrollbars */
+      background-color: #000000;
+    }
+
+    /* Style the iframe to cover the entire viewport */
+    #browser-frame {
+      width: 100vw;
+      height: 100vh;
+      border: none;
+      visibility: hidden; /* Start hidden until a URL is loaded */
+    }
+
+    /* Simple loading indicator/message */
+    #message {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: white;
+      font-family: sans-serif;
+      font-size: 24px;
+    }
+  </style>
 </head>
 <body>
-    
-    <div id="message">Waiting for URL...</div>
-    <iframe id="browser-frame"></iframe>
 
-    <script>
-    // Namespace confirmed to be used on both sides
-      const CUSTOM_CHANNEL_NAMESPACE = 'urn:x-cast:com.connectsdk'; 
-      
-      const context = cast.framework.CastReceiverContext.getInstance();
-      const iframe = document.getElementById('browser-frame');
-      const statusMessage = document.getElementById('message');
+  <div id="message">Waiting for URL...</div>
+  <iframe id="browser-frame"></iframe>
 
-    // Make sure the message is visible for testing
-      statusMessage.style.display = 'block';
-      statusMessage.innerHTML = 'Receiver Ready. Waiting for message...';
-      
-      context.addCustomMessageListener(CUSTOM_CHANNEL_NAMESPACE, function(customEvent) {
-          
-          const data = customEvent.data;
-          const url = data.url; 
+  <script>
+  // Namespace confirmed to be used on both sides
+    const CUSTOM_CHANNEL_NAMESPACE = 'urn:x-cast:com.connectsdk';
 
-          if (url) {
-              console.log("Successfully received URL:", url);
+    const context = cast.framework.CastReceiverContext.getInstance();
+    const iframe = document.getElementById('browser-frame');
+    const statusMessage = document.getElementById('message');
 
-              // Display the received URL as text confirmation
-              statusMessage.innerHTML = 'SUCCESS! URL Received:<br>' + url + '<br>Opening SignalingServer...';
-              statusMessage.style.color = '#7FFFD4'; // Aqua/Mint for success
+  // Make sure the message is visible for testing
+    statusMessage.style.display = 'block';
+    statusMessage.innerHTML = 'Receiver Ready. Waiting for message...';
 
-              // Redirect to SingalingServer.html with the URL as a query parameter
-              setTimeout(() => {
-                  window.location.href = 'SingalingServer.html?signalingUrl=' + encodeURIComponent(url);
-              }, 1000); // Wait 1 second to show the message
+    context.addCustomMessageListener(CUSTOM_CHANNEL_NAMESPACE, function(customEvent) {
 
-          } else {
-              console.error("Received message, but no 'url' key was found:", data);
-              statusMessage.innerHTML = "Error: Received message, but URL key is missing.";
-              statusMessage.style.color = 'red';
-          }
-      });
+      const data = customEvent.data;
+      const url = data.url;
 
-      // Handle session disconnect and start the context as usual
-      context.addEventListener(cast.framework.system.EventType.SENDER_DISCONNECTED, (event) => {
-        if (context.getSenders().length === 0) {
-          setTimeout(() => context.stop(), 5000); 
-        }
-      });
+      if (url) {
+        console.log("Successfully received URL:", url);
 
-      context.start();
-      console.log("Custom Receiver Application Started.");
-    </script>
+        // Display the received URL as text confirmation
+        statusMessage.innerHTML = 'SUCCESS! URL Received:<br>' + url + '<br>Opening SignalingServer...';
+        statusMessage.style.color = '#7FFFD4'; // Aqua/Mint for success
+
+        // Redirect to SingalingServer.html with the URL as a query parameter
+        setTimeout(() => {
+          window.location.href = 'SingalingServer.html?signalingUrl=' + encodeURIComponent(url);
+        }, 1000); // Wait 1 second to show the message
+
+      } else {
+        console.error("Received message, but no 'url' key was found:", data);
+        statusMessage.innerHTML = "Error: Received message, but URL key is missing.";
+        statusMessage.style.color = 'red';
+      }
+    });
+
+    // Handle session disconnect and start the context as usual
+    context.addEventListener(cast.framework.system.EventType.SENDER_DISCONNECTED, (event) => {
+      if (context.getSenders().length === 0) {
+        setTimeout(() => context.stop(), 5000);
+      }
+    });
+
+    context.start();
+    console.log("Custom Receiver Application Started.");
+  </script>
 </body>
 </html>
