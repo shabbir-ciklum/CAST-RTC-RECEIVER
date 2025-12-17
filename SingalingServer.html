@@ -14,6 +14,19 @@
       width: 100%;
       height: 100%;
       overflow: hidden;
+      position: fixed;
+    }
+
+    /* Ensure video container is constrained */
+    #remoteVideo {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      max-width: 100vw;
+      max-height: 100vh;
     }
 
     .scroller::-webkit-scrollbar { width: 8px; }
@@ -41,10 +54,10 @@
   </header>
 
   <!-- Main Content -->
-  <main class="flex-grow flex flex-col w-full overflow-hidden" style="padding: 0;">
+  <main class="flex-grow flex flex-col w-full overflow-hidden" style="padding: 0; position: relative;">
     <!-- Video Container -->
-    <div class="relative w-full flex-grow bg-black overflow-hidden group" style="min-height: 0;">
-      <video id="remoteVideo" class="w-full h-full object-contain" autoplay playsinline></video>
+    <div class="relative w-full flex-grow bg-black overflow-hidden group" style="min-height: 0; position: relative;">
+      <video id="remoteVideo" autoplay playsinline></video>
 
       <div class="absolute inset-0 flex items-center justify-center bg-black/50 transition-opacity duration-300 pointer-events-none" id="loader">
         <div class="flex flex-col items-center">
