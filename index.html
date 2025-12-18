@@ -33,6 +33,66 @@
       color: white;
       font-family: sans-serif;
       font-size: 24px;
+      text-align: center;
+    }
+
+    /* Spinner animation */
+    .spinner {
+      border: 4px solid rgba(255, 255, 255, 0.3);
+      border-top: 4px solid white;
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* Checkmark animation */
+    .checkmark {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      display: block;
+      stroke-width: 3;
+      stroke: #7FFFD4;
+      stroke-miterlimit: 10;
+      margin: 0 auto;
+      animation: fill 0.4s ease-in-out 0.4s forwards, scale 0.3s ease-in-out 0.9s both;
+    }
+
+    .checkmark-circle {
+      stroke-dasharray: 166;
+      stroke-dashoffset: 166;
+      stroke-width: 3;
+      stroke-miterlimit: 10;
+      stroke: #7FFFD4;
+      fill: none;
+      animation: stroke 0.6s cubic-bezier(0.65, 0, 0.45, 1) forwards;
+    }
+
+    .checkmark-check {
+      transform-origin: 50% 50%;
+      stroke-dasharray: 48;
+      stroke-dashoffset: 48;
+      animation: stroke 0.3s cubic-bezier(0.65, 0, 0.45, 1) 0.8s forwards;
+    }
+
+    @keyframes stroke {
+      100% { stroke-dashoffset: 0; }
+    }
+
+    @keyframes scale {
+      0%, 100% { transform: none; }
+      50% { transform: scale3d(1.1, 1.1, 1); }
+    }
+
+    @keyframes fill {
+      100% { box-shadow: inset 0px 0px 0px 30px #7FFFD4; }
     }
   </style>
 </head>
@@ -51,7 +111,7 @@
 
   // Make sure the message is visible for testing
     statusMessage.style.display = 'block';
-    statusMessage.innerHTML = 'Receiver Ready. Waiting for message...';
+    statusMessage.innerHTML = '<div class="spinner"></div>';
 
     context.addCustomMessageListener(CUSTOM_CHANNEL_NAMESPACE, function(customEvent) {
 
@@ -61,14 +121,18 @@
       if (url) {
         console.log("Successfully received URL:", url);
 
-        // Display the received URL as text confirmation
-        statusMessage.innerHTML = 'SUCCESS! URL Received:<br>' + url + '<br>Opening SignalingServer...';
-        statusMessage.style.color = '#7FFFD4'; // Aqua/Mint for success
+        // Show checkmark for success
+        statusMessage.innerHTML = '<svg class="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52"><circle class="checkmark-circle" cx="26" cy="26" r="25" fill="none"/><path class="checkmark-check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/></svg>';
+
+        // Wait briefly to show checkmark, then show spinner for opening signaling server
+        setTimeout(() => {
+          statusMessage.innerHTML = '<div class="spinner"></div>';
+        }, 1500);
 
         // Redirect to SingalingServer.html with the URL as a query parameter
         setTimeout(() => {
           window.location.href = 'SingalingServer.html?signalingUrl=' + encodeURIComponent(url);
-        }, 1000); // Wait 1 second to show the message
+        }, 2000);
 
       } else {
         console.error("Received message, but no 'url' key was found:", data);
