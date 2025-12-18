@@ -69,6 +69,16 @@
         </div>
       </div>
 
+      <!-- Voice-Only Indicator -->
+      <div class="absolute inset-0 flex items-center justify-center bg-black transition-opacity duration-300 pointer-events-none opacity-0" id="voiceOnlyIndicator">
+        <div class="flex flex-col items-center">
+          <svg class="h-24 w-24 text-blue-400 mb-4 animate-pulse" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+          </svg>
+          <span class="text-xl text-gray-300 font-medium">Voice Only</span>
+        </div>
+      </div>
+
       <div class="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/90 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex justify-between items-center">
         <div class="text-xs text-gray-400 font-mono">
           Protocol: <span class="text-white">Swift Message Struct (Binary Frame)</span>
@@ -129,6 +139,10 @@
     const statusBadge = document.getElementById('connectionStatus');
     const logContainer = document.getElementById('logs');
     const muteBtn = document.getElementById('muteBtn');
+    const voiceOnlyIndicator = document.getElementById('voiceOnlyIndicator');
+
+    let hasVideo = false;
+    let hasAudio = false;
 
     // --- Logger ---
     function log(msg, type = 'info') {
@@ -167,6 +181,10 @@
     function startConnection() {
       if (ws) ws.close();
       if (pc) pc.close();
+
+      // Reset track detection flags
+      hasVideo = false;
+      hasAudio = false;
 
       log(`Connecting to ${CONFIG.signalingUrl}...`);
       updateStatus('connecting');
@@ -221,9 +239,34 @@
 
       pc.ontrack = (event) => {
         log(`Track received: ${event.track.kind}`, 'success');
+
+        // Track what types of streams we're receiving
+        if (event.track.kind === 'video') hasVideo = true;
+        if (event.track.kind === 'audio') hasAudio = true;
+
         if (videoElem.srcObject !== event.streams[0]) {
           videoElem.srcObject = event.streams[0];
           log('Stream attached to video element.', 'success');
+
+          // Check if this is a voice-only stream
+          setTimeout(() => {
+            const stream = videoElem.srcObject;
+            if (stream) {
+              const videoTracks = stream.getVideoTracks();
+              const audioTracks = stream.getAudioTracks();
+              const isVoiceOnly = audioTracks.length > 0 && videoTracks.length === 0;
+
+              if (isVoiceOnly) {
+                log('Voice-only stream detected - showing speaker icon', 'info');
+                voiceOnlyIndicator.classList.remove('opacity-0');
+                voiceOnlyIndicator.classList.add('opacity-100');
+              } else {
+                voiceOnlyIndicator.classList.add('opacity-0');
+                voiceOnlyIndicator.classList.remove('opacity-100');
+              }
+            }
+          }, 100);
+
           updateStatus('connected');
         }
       };
