@@ -282,9 +282,24 @@
                     }
                 };
 
-                pc.onconnectionstatechange = () => {
+                pc.onconnectionstatechange = (event) => {
                     log(`Peer Connection State: ${pc.connectionState}`);
-                    if (pc.connectionState === 'failed') updateStatus('disconnected');
+
+                    switch(pc.connectionState) {
+                        case "connected":
+                            updateStatus('connected');
+                            break;
+                        case "disconnected":
+                        case "failed":
+                        case "closed":
+                            log("WebRTC Stream stopped. Closing window...", 'error');
+                            updateStatus('disconnected');
+                            // Close the window after a brief delay to show the status update
+                            setTimeout(() => {
+                                window.close();
+                            }, 1000);
+                            break;
+                    }
                 };
 
                 pc.addTransceiver('video', { direction: 'recvonly' });
