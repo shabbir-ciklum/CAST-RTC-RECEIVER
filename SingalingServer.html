@@ -5,6 +5,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WebRTC Stream Player</title>
+
+  <!-- Cast Framework SDK -->
+  <script src="https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
   <script src="https://cdn.jsdelivr.net/npm/@twind/cdn"></script>
   <style>
     /* Prevent any scrolling */
@@ -117,6 +126,53 @@
   </main>
 
   <script>
+    // --- Firebase Configuration ---
+    const firebaseConfig = {
+      apiKey: "AIzaSyC59kWTKog7ziQjlq58-Ak6MybUqsHeFF8",
+      authDomain: "webrtc-receiver-36d3e.firebaseapp.com",
+      databaseURL: "https://webrtc-receiver-36d3e-default-rtdb.firebaseio.com",
+      projectId: "webrtc-receiver-36d3e",
+      storageBucket: "webrtc-receiver-36d3e.firebasestorage.app",
+      messagingSenderId: "897058750502",
+      appId: "1:897058750502:web:e2b6abf64c9cf10c14e6e7",
+      measurementId: "G-YK6SQVT9RX"
+    };
+
+    // Initialize Firebase
+    let firebaseApp = null;
+    let analytics = null;
+    let db = null;
+    let sessionId = Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+
+    try {
+      firebaseApp = firebase.initializeApp(firebaseConfig);
+      analytics = firebase.analytics();
+      db = firebase.firestore();
+      console.log('Firebase initialized successfully');
+    } catch (error) {
+      console.error('Firebase initialization failed:', error);
+    }
+
+    // Firebase logger function
+    async function logToFirebase(message, level = 'info', metadata = {}) {
+      if (!db) return;
+
+      try {
+        await db.collection('webrtc_logs').add({
+          sessionId: sessionId,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+          clientTimestamp: Date.now(),
+          level: level,
+          message: message,
+          metadata: metadata,
+          userAgent: navigator.userAgent,
+          url: window.location.href
+        });
+      } catch (error) {
+        console.error('Failed to log to Firebase:', error);
+      }
+    }
+
     // --- Configuration ---
     // Get signaling URL from query parameter
     const urlParams = new URLSearchParams(window.location.search);
@@ -145,17 +201,41 @@
     let hasAudio = false;
 
     // --- Logger ---
-    function log(msg, type = 'info') {
+    function log(msg, type = 'info', metadata = {}) {
       const el = document.createElement('div');
       const time = new Date().toLocaleTimeString();
       el.innerHTML = `<span class="text-gray-500">[${time}]</span> <span class="${type === 'error' ? 'text-red-400' : type === 'success' ? 'text-green-400' : 'text-blue-300'}">${msg}</span>`;
       logContainer.appendChild(el);
       logContainer.scrollTop = logContainer.scrollHeight;
       console.log(`[WebRTC] ${msg}`);
+
+      // Also log to Firebase
+      logToFirebase(msg, type, metadata);
     }
 
     function clearLogs() {
       logContainer.innerHTML = '';
+    }
+
+    function forceCloseReceiver() {
+      try {
+        const context = cast.framework.CastReceiverContext.getInstance();
+
+        log('Stopping Cast Receiver Context...', 'error');
+        // 1. Tell the framework to stop (terminates the cast session)
+        context.stop();
+
+        // 2. If the app is still visible after 500ms, force a window close
+        setTimeout(() => {
+          log('Forcing window.close() as fallback...', 'error');
+          window.close();
+        }, 500);
+      } catch (error) {
+        log('Cast framework not available, using window.close() directly', 'error');
+        console.error('Cast framework error:', error);
+        // Fallback to regular window close if Cast framework is not available
+        window.close();
+      }
     }
 
     function updateStatus(status) {
@@ -292,7 +372,11 @@
       };
 
       pc.onconnectionstatechange = (event) => {
-        log(`Peer Connection State: ${pc.connectionState}`);
+        const eventTime = performance.now();
+        log(`Peer Connection State: ${pc.connectionState} (at ${eventTime.toFixed(2)}ms)`, 'info', {
+          connectionState: pc.connectionState,
+          performanceTime: eventTime
+        });
 
         switch(pc.connectionState) {
           case "connected":
@@ -301,11 +385,37 @@
           case "disconnected":
           case "failed":
           case "closed":
-            log("WebRTC Stream stopped. Closing window...", 'error');
+            const disconnectTime = Date.now();
+            log(`[${disconnectTime}] WebRTC Stream stopped. Initiating receiver close...`, 'error', {
+              disconnectTime: disconnectTime,
+              connectionState: pc.connectionState
+            });
             updateStatus('disconnected');
-            // Close the window after a brief delay to show the status update
+
+            // Close the receiver after a brief delay to show the status update
             setTimeout(() => {
-              window.close();
+              const closeCallTime = Date.now();
+              const delayMs = closeCallTime - disconnectTime;
+              log(`[${closeCallTime}] Calling forceCloseReceiver() - Delay: ${delayMs}ms`, 'error', {
+                closeCallTime: closeCallTime,
+                disconnectTime: disconnectTime,
+                delayMs: delayMs
+              });
+              console.log(`[TIMING] Disconnect event: ${disconnectTime}, forceCloseReceiver() call: ${closeCallTime}, Delay: ${delayMs}ms`);
+
+              // Log before close attempt
+              const beforeClose = performance.now();
+              forceCloseReceiver();
+              const afterClose = performance.now();
+
+              // This may not execute if receiver closes immediately
+              const executionTime = (afterClose - beforeClose).toFixed(2);
+              console.log(`[TIMING] forceCloseReceiver() execution time: ${executionTime}ms`);
+              log(`forceCloseReceiver() called - execution took ${executionTime}ms`, 'error', {
+                executionTime: executionTime,
+                beforeClose: beforeClose,
+                afterClose: afterClose
+              });
             }, 1000);
             break;
         }
