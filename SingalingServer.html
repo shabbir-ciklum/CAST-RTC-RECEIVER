@@ -88,13 +88,10 @@
         </div>
       </div>
 
-      <div class="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/90 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex justify-between items-center">
+      <div class="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/90 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200">
         <div class="text-xs text-gray-400 font-mono">
           Protocol: <span class="text-white">Swift Message Struct (Binary Frame)</span>
         </div>
-        <button onclick="toggleMute()" id="muteBtn" class="bg-gray-700 hover:bg-gray-600 text-white px-2 py-1 rounded text-xs transition font-medium">
-          Mute
-        </button>
       </div>
     </div>
 
@@ -194,7 +191,6 @@
     const loaderText = document.getElementById('loaderText');
     const statusBadge = document.getElementById('connectionStatus');
     const logContainer = document.getElementById('logs');
-    const muteBtn = document.getElementById('muteBtn');
     const voiceOnlyIndicator = document.getElementById('voiceOnlyIndicator');
 
     let hasVideo = false;
@@ -204,6 +200,10 @@
     let audioContext = null;
     let audioSource = null;
     let gainNode = null;
+
+    // Ensure video element starts unmuted
+    videoElem.muted = false;
+    videoElem.volume = 1.0;
 
     // --- Logger ---
     function log(msg, type = 'info', metadata = {}) {
@@ -373,22 +373,34 @@
 
             // Create gain node for volume control
             gainNode = audioContext.createGain();
-            gainNode.gain.value = 1.0;
+            gainNode.gain.value = 1.0; // Start at full volume (unmuted)
 
             // Connect: source → gain → destination (speakers)
             audioSource.connect(gainNode);
             gainNode.connect(audioContext.destination);
 
-            // Resume context if suspended (autoplay restriction)
+            // IMPORTANT: Resume context if suspended (autoplay restriction on Cast devices)
+            // This is critical for Vizio TVs and other Cast receivers
             if (audioContext.state === 'suspended') {
+              log('AudioContext is suspended, attempting to resume...', 'info');
               audioContext.resume().then(() => {
-                log('AudioContext resumed successfully.', 'success');
+                log('AudioContext resumed successfully - audio should now play', 'success');
               }).catch(err => {
                 log(`Failed to resume AudioContext: ${err.message}`, 'error');
               });
+            } else {
+              log(`AudioContext state: ${audioContext.state}`, 'info');
             }
 
-            log('Audio track connected via Web Audio API.', 'success');
+            // Force unmute by ensuring gain is at maximum
+            setTimeout(() => {
+              if (gainNode && gainNode.gain.value === 0) {
+                log('Detected muted state, forcing unmute...', 'info');
+                gainNode.gain.value = 1.0;
+              }
+            }, 100);
+
+            log('Audio track connected via Web Audio API at full volume.', 'success');
 
             // Track the audio track state
             event.track.onended = () => {
@@ -402,6 +414,11 @@
             const currentStream = videoElem.srcObject || new MediaStream();
             currentStream.addTrack(event.track);
             videoElem.srcObject = currentStream;
+
+            // Ensure video element is unmuted in fallback mode
+            videoElem.muted = false;
+            videoElem.volume = 1.0;
+            log('Video element unmuted and volume set to maximum', 'info');
           }
         }
 
@@ -416,6 +433,17 @@
           } else {
             voiceOnlyIndicator.classList.add('opacity-0');
             voiceOnlyIndicator.classList.remove('opacity-100');
+          }
+
+          // Force unmute to ensure audio plays on Cast devices (Vizio TVs)
+          if (gainNode) {
+            gainNode.gain.value = 1.0;
+            log('Ensured audio is unmuted via Web Audio API', 'info');
+          }
+          if (videoElem) {
+            videoElem.muted = false;
+            videoElem.volume = 1.0;
+            log('Ensured video element is unmuted', 'info');
           }
 
           updateStatus('connected');
@@ -571,38 +599,56 @@
       }
     }
 
-    function toggleMute() {
-      if (gainNode) {
-        // Web Audio API muting via gain control
-        if (gainNode.gain.value > 0) {
-          gainNode.gain.value = 0;
-          muteBtn.innerText = "Unmute";
-          muteBtn.classList.replace('bg-blue-600', 'bg-gray-700');
-          log('Audio muted via Web Audio API', 'info');
-        } else {
-          gainNode.gain.value = 1.0;
-          muteBtn.innerText = "Mute";
-          muteBtn.classList.replace('bg-gray-700', 'bg-blue-600');
-          log('Audio unmuted via Web Audio API', 'info');
-        }
-      } else {
-        // Fallback to video element muting
-        if (videoElem.muted) {
-          videoElem.muted = false;
-          muteBtn.innerText = "Mute";
-          muteBtn.classList.replace('bg-gray-700', 'bg-blue-600');
-        } else {
-          videoElem.muted = true;
-          muteBtn.innerText = "Unmute";
-          muteBtn.classList.replace('bg-blue-600', 'bg-gray-700');
+    // Function to ensure audio is playing
+    // for vizio tv, this is needed to force play the audio if muted by default
+    function ensureAudioPlaying() {
+      if (audioContext && audioContext.state === 'suspended') {
+        log('Attempting to resume suspended AudioContext...', 'info');
+        audioContext.resume().then(() => {
+          log('AudioContext resumed after user interaction', 'success');
+        }).catch(err => {
+          log(`Failed to resume AudioContext: ${err.message}`, 'error');
+        });
+      }
+
+      // Also ensure video element is ready to play
+      if (videoElem) {
+        videoElem.muted = false;
+        videoElem.volume = 1.0;
+        // Try to play if paused (some Cast devices pause by default)
+        if (videoElem.paused && videoElem.srcObject) {
+          videoElem.play().catch(err => {
+            log(`Video play attempt: ${err.message}`, 'info');
+          });
         }
       }
+
+      if (gainNode) {
+        gainNode.gain.value = 1.0;
+      }
     }
+
+    // Add click listener to ensure audio plays (for Cast device restrictions)
+    document.addEventListener('click', ensureAudioPlaying);
+    document.addEventListener('touchstart', ensureAudioPlaying);
+
+    // Also try to resume on visibility change (when Cast receiver comes to foreground)
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        log('Page became visible, ensuring audio playback...', 'info');
+        ensureAudioPlaying();
+      }
+    });
 
     window.addEventListener('load', () => {
       // Display the signaling URL
       document.getElementById('signalingUrlDisplay').textContent = CONFIG.signalingUrl;
       log('App Loaded. Ready to connect.');
+
+      // Ensure video element is unmuted on load
+      videoElem.muted = false;
+      videoElem.volume = 1.0;
+
       startConnection();
     });
 

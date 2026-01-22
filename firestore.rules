@@ -1,0 +1,23 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow write access to webrtc_logs collection
+    // This allows your receiver app to create log entries
+    match /webrtc_logs/{document=**} {
+      // Anyone can write (append-only logs)
+      allow create: if true;
+
+      // Only allow reading if authenticated (protect privacy)
+      // Comment out this line if you don't use Firebase Auth and want public read access
+      allow read: if request.auth != null;
+
+      // Prevent updates and deletes to maintain log integrity
+      allow update, delete: if false;
+    }
+
+    // Deny all other collections by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
