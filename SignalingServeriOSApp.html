@@ -193,11 +193,6 @@
             let hasVideo = false;
             let hasAudio = false;
 
-            // Web Audio API state
-            let audioContext = null;
-            let audioSource = null;
-            let gainNode = null;
-
             // --- Logger ---
             function log(msg, type = 'info', metadata = {}) {
                 const el = document.createElement('div');
@@ -259,21 +254,7 @@
             function startConnection() {
                 if (ws) ws.close();
                 if (pc) pc.close();
-
-                // Cleanup Web Audio API
-                if (audioSource) {
-                    audioSource.disconnect();
-                    audioSource = null;
-                }
-                if (gainNode) {
-                    gainNode.disconnect();
-                    gainNode = null;
-                }
-                if (audioContext && audioContext.state !== 'closed') {
-                    audioContext.close();
-                    audioContext = null;
-                }
-
+    
                 hasVideo = false;
                 hasAudio = false;
 
@@ -326,91 +307,39 @@
             }
 
             async function setupPeerConnection() {
-                pc = new RTCPeerConnection({ iceServers: CONFIG.iceServers });
+                pc = new RTCPeerConnection({ iceServers: CONFIG.iceServers });    
                 pc.ontrack = (event) => {
-                    log(`Track received: ${event.track.kind}`, 'success');
+                    log("Track received: ${event.track.kind}", 'success');
 
-                    if (event.track.kind === 'video') {
-                        hasVideo = true;
+                    // Track what types of streams we're receiving
+                    if (event.track.kind === 'video') hasVideo = true;
+                    if (event.track.kind === 'audio') hasAudio = true;
 
-                        // Get existing stream or create new one with only video
-                        const currentStream = videoElem.srcObject;
-                        if (!currentStream) {
-                            const videoStream = new MediaStream([event.track]);
-                            videoElem.srcObject = videoStream;
-                            log('Video track attached to video element.', 'success');
-                        } else {
-                            currentStream.addTrack(event.track);
-                            log('Video track added to existing stream.', 'success');
-                        }
-                    }
-                    else if (event.track.kind === 'audio') {
-                        hasAudio = true;
-                        log('Setting up Web Audio API for audio playback...', 'info');
+                    if (videoElem.srcObject !== event.streams[0]) {
+                      videoElem.srcObject = event.streams[0];
+                      log('Stream attached to video element.', 'success');
 
-                        try {
-                            // Create AudioContext if not exists
-                            if (!audioContext) {
-                                const AudioContext = window.AudioContext || window.webkitAudioContext;
-                                audioContext = new AudioContext();
-                                log(`AudioContext created. State: ${audioContext.state}`, 'info');
-                            }
+                      // Check if this is a voice-only stream
+                      setTimeout(() => {
+                        const stream = videoElem.srcObject;
+                        if (stream) {
+                          const videoTracks = stream.getVideoTracks();
+                          const audioTracks = stream.getAudioTracks();
+                          const isVoiceOnly = audioTracks.length > 0 && videoTracks.length === 0;
 
-                            // Create MediaStream with only audio track
-                            const audioStream = new MediaStream([event.track]);
-
-                            // Create source from stream
-                            audioSource = audioContext.createMediaStreamSource(audioStream);
-
-                            // Create gain node for volume control
-                            gainNode = audioContext.createGain();
-                            gainNode.gain.value = 1.0;
-
-                            // Connect: source → gain → destination (speakers)
-                            audioSource.connect(gainNode);
-                            gainNode.connect(audioContext.destination);
-
-                            // Resume context if suspended (autoplay restriction)
-                            if (audioContext.state === 'suspended') {
-                                audioContext.resume().then(() => {
-                                    log('AudioContext resumed successfully.', 'success');
-                                }).catch(err => {
-                                    log(`Failed to resume AudioContext: ${err.message}`, 'error');
-                                });
-                            }
-
-                            log('Audio track connected via Web Audio API.', 'success');
-
-                            // Track the audio track state
-                            event.track.onended = () => {
-                                log('Audio track ended.', 'info');
-                            };
-
-                        } catch (err) {
-                            log(`Web Audio API error: ${err.message}`, 'error');
-                            // Fallback: try adding to video element
-                            log('Falling back to video element for audio...', 'info');
-                            const currentStream = videoElem.srcObject || new MediaStream();
-                            currentStream.addTrack(event.track);
-                            videoElem.srcObject = currentStream;
-                        }
-                    }
-
-                    // Update UI after both tracks potentially received
-                    setTimeout(() => {
-                        const isVoiceOnly = hasAudio && !hasVideo;
-
-                        if (isVoiceOnly) {
+                          if (isVoiceOnly) {
                             log('Voice-only stream detected - showing speaker icon', 'info');
                             voiceOnlyIndicator.classList.remove('opacity-0');
                             voiceOnlyIndicator.classList.add('opacity-100');
-                        } else {
+                          } else {
                             voiceOnlyIndicator.classList.add('opacity-0');
                             voiceOnlyIndicator.classList.remove('opacity-100');
+                          }
                         }
+                      }, 100);
 
-                        updateStatus('connected');
-                    }, 100);
+                      updateStatus('connected');
+                    }
                 };
 
                 // Event: ICE Candidate (Local)
@@ -563,30 +492,14 @@
             }
 
             function toggleMute() {
-                if (gainNode) {
-                    // Web Audio API muting via gain control
-                    if (gainNode.gain.value > 0) {
-                        gainNode.gain.value = 0;
-                        muteBtn.innerText = "Unmute";
-                        muteBtn.classList.replace('bg-blue-600', 'bg-gray-700');
-                        log('Audio muted via Web Audio API', 'info');
-                    } else {
-                        gainNode.gain.value = 1.0;
-                        muteBtn.innerText = "Mute";
-                        muteBtn.classList.replace('bg-gray-700', 'bg-blue-600');
-                        log('Audio unmuted via Web Audio API', 'info');
-                    }
+                if (videoElem.muted) {
+                    videoElem.muted = false;
+                    muteBtn.innerText = "Mute";
+                    muteBtn.classList.replace('bg-gray-700', 'bg-blue-600');
                 } else {
-                    // Fallback to video element muting
-                    if (videoElem.muted) {
-                        videoElem.muted = false;
-                        muteBtn.innerText = "Mute";
-                        muteBtn.classList.replace('bg-gray-700', 'bg-blue-600');
-                    } else {
-                        videoElem.muted = true;
-                        muteBtn.innerText = "Unmute";
-                        muteBtn.classList.replace('bg-blue-600', 'bg-gray-700');
-                    }
+                    videoElem.muted = true;
+                    muteBtn.innerText = "Unmute";
+                    muteBtn.classList.replace('bg-blue-600', 'bg-gray-700');
                 }
             }
 
